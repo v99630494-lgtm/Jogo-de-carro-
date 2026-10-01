@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-select=none">
+    <title>Retro Highway 3D</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #111;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            font-family: 'Segoe UI', Arial, sans-serif;
+            overflow: hidden;
+        }
+        #game-container {
+            position: relative;
+            width: 100%;
+            max-width: 400px;
+            height: 100%;
+            max-height: 700px;
+            box-shadow: 0 0 30px rgba(0,0,0,0.8);
+            background: #000;
+        }
+        canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+            background: #000;
+        }
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            box-sizing: border-box;
+            padding: 15px;
+        }
+        .hud-container {
+            display: flex;
+            justify-content: space-between;
+            width: 100%;
+        }
+        .hud-box {
+            background: rgba(0, 0, 0, 0.75);
+            padding: 8px 15px;
+            border-radius: 6px;
+            color: #fff;
+            font-size: 18px;
+            font-weight: bold;
+            border: 2px solid #00ffcc;
+            box-shadow: 0 0 10px rgba(0, 255, 204, 0.3);
+        }
+        #speed-box {
+            border-color: #ff0055;
+            box-shadow: 0 0 10px rgba(255, 0, 85, 0.3);
+        }
+        #controls-layer {
+            position: absolute;
+            bottom: 30px;
+            left: 0;
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            padding: 0 25px;
+            box-sizing: border-box;
+            z-index: 10;
+        }
+        .ctrl-btn {
+            width: 75px;
+            height: 75px;
+            background: rgba(255, 255, 255, 0.15);
+            border: 2px solid rgba(255, 255, 255, 0.4);
+            border-radius: 50%;
+            color: white;
+            font-size: 30px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            backdrop-filter: blur(5px);
+            -webkit-user-select: none;
+            user-select: none;
+        }
+        .ctrl-btn:active {
+            background: rgba(0, 255, 204, 0.4);
+            border-color: #00ffcc;
+        }
+        #game-over-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            z-index: 20;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+        #game-over-screen.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+        h1 {
+            color: #ff0055;
+            font-size: 36px;
+            margin-bottom: 5px;
+            text-shadow: 0 0 15px rgba(255, 0, 85, 0.6);
+        }
+        .btn-restart {
+            background: linear-gradient(135deg, #00ffcc 0%, #00aa88 100%);
+            border: none;
+            color: #000;
+            padding: 12px 35px;
+            font-size: 18px;
+            font-weight: bold;
+            border-radius: 25px;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(0, 255, 204, 0.4);
+        }
+    </style>
+</head>
+<body>
+
+    <div id="game-container">
+        <canvas id="roadCanvas" width="360" height="640"></canvas>
+
+        <div id="ui-layer">
+            <div class="hud-container">
+                <div id="score-box" class="hud-box">PONTOS: <span id="score-val">0</span></div>
+                <div id="speed-box" class="hud-box">KM/H: <span id="speed-val">120</span></div>
+            </div>
+        </div>
+
+        <div id="controls-layer">
+            <div class="ctrl-btn" id="left-btn">◀</div>
+            <div class="ctrl-btn" id="right-btn">▶</div>
+        </div>
+
+        <div id="game-over-screen">
+            <h1>VOCÊ EXPLODIU!</h1>
+            <p style="font-size: 18px; margin-bottom: 25px;">Sua pontuação: <b id="final-score" style="color:#00ffcc">0</b></p>
+            <button class="btn-restart" onclick="restartGame()">JOGAR DE NOVO</button>
+        </div>
+    </div>
+
+<script>
+    const canvas = document.getElementById("roadCanvas");
+    const ctx = canvas.getContext("2d");
+
+    // Configurações do Jogo
+    let playerX = 0; // Posição do jogador (-1 esquerda total, 1 direita total)
+    let position = 0; // Progresso na pista
+    let speed = 0;
+    const maxSpeed = 160;
+    let score = 0;
+    let isGameOver = false;
+
+    // Teclas e botões
+    let keys = { left: false, right: false };
+
+    // Configuração da Pista
+    const roadWidth = 2000;
+    const segmentLength = 200;
+    let segments = [];
+    let obstacles = [];
+
+    // Geração da estrutura da estrada cilíndrica/falsa 3D
+    for (let i = 0; i < 500; i++) {
+        segments.push({
+            index: i,
+            p1: { world: { z: i * segmentLength }, screen: { x: 0, y: 0, w: 0 } },
+            p2: { world: { z: (i + 1) * segmentLength }, screen: { x: 0, y: 0, w: 0 } },
+            // Cria curvas alternadas ao longo da pista
+            curve: Math.sin(i / 30) * 2.5
+        });
+    }
+
+    // Gerar os carros adversários distribuídos pela pista
+    function spawnObstacles() {
+        obstacles = [];
+        for (let i = 30; i < segments.length; i += 40) {
+            // Escolhe uma pista aleatória: -0.5 (esquerda), 0 (meio), 0.5 (direita)
+            let lanes = [-0.5, 0, 0.5];
+            let targetLane = lanes[Math.floor(Math.random() * lanes.length)];
+            
+            // Cores vibrantes neon para os carros rivais
+            let colors = ["#ff0055", "#ffcc00", "#9900ff", "#00ff66"];
+            let randomColor = colors[Math.floor(Math.random() * colors.length)];
+
+            obstacles.push({
+                z: i * segmentLength,
+                x: targetLane,
+                color: randomColor,
+                speed: 40 + Math.random() * 30
+            });
+        }
+    }
+
+    // Projeção Matemática de Falso 3D (Matemática clássica de jogos arcade)
+    function project(p, cameraX, cameraY, cameraZ, cameraDepth) {
+        let worldX = p.world.x || 0;
+        let worldY = p.world.y || 0;
+        let worldZ = p.world.z;
+
+        let transX = worldX - cameraX;
+        let transY = worldY - cameraY;
+        let transZ = worldZ - cameraZ;
+
+        let scale = cameraDepth / transZ;
+
+        p.screen.x = Math.round((canvas.width / 2) + (scale * transX * canvas.width / 2));
+        p.screen.y = Math.round((canvas.height / 2) - (scale * transY * canvas.height / 2));
+        p.screen.w = Math.round(scale * roadWidth * canvas.width / 2);
+    }
+
+    // Controles de Teclado (PC)
+    document.addEventListener("keydown", e => {
+        if (e.key === "ArrowLeft" || e.key === "a" || e.key === "A") keys.left = true;
+        if (e.key === "ArrowRight" || e.key === "d" || e.key === "D") keys.right = true;
+    });
+    document.addEventListener("keyup", e => {
+        if (e.key === "ArrowLeft" || e.key === "a" || e.key === "A") keys.left = false;
+        if (e.key === "ArrowRight" || e.key === "d" || e.key === "D") keys.right = false;
+    });
+
+    // Controles por Touch (Celular)
+    const leftBtn = document.getElementById("left-btn");
+    const rightBtn = document.getElementById("right-btn");
+
+    leftBtn.addEventListener("touchstart", (e) => { e.preventDefault(); keys.left = true; });
+    leftBtn.addEventListener("touchend", () => keys.left = false);
+    rightBtn.addEventListener("touchstart", (e) => { e.preventDefault(); keys.right = true; });
+    rightBtn.addEventListener("touchend", () => keys.right = false);
+
+    // Motor de Atualização (Física e Movimento)
+    function update() {
+        if (isGameOver) return;
+
+        // Aceleração constante
+        if (speed < maxSpeed) speed += 0.5;
+        position += speed * 2;
+
+        document.getElementById("speed-val").innerText = Math.floor(speed * 1.5);
+
+        // Movimentação lateral baseada na velocidade atual
+        if (keys.left) playerX -= 0.04;
+        if (keys.right) playerX += 0.04;
+
+        // Limitar o carro dentro das margens da estrada
+        if (playerX < -1.1) playerX = -1.1;
+        if (playerX > 1.1) playerX = 1.1;
+
+        // Loop infinito de pista
+        if (position >= segments.length * segmentLength) {
+            position = 0;
+            spawnObstacles();
+        }
+
+        // Atualizar movimento e checar colisão com carros adversários
+        let playerSegmentZ = position + 200; // posição visual aproximada do jogador na tela
+
+        obstacles.forEach(obs => {
+            // Os outros carros andam na pista também
+            obs.z += obs.speed;
+
+            // Se o carro adversário sumir para trás, reposiciona ele na frente e ganha pontos
+            if (obs.z < position - 500) {
+                obs.z += segments.length * segmentLength;
+                score += 10;
+                document.getElementById("score-val").innerText = score;
+            }
+
+            // Checar colisão direta física entre caixas de impacto
+            if (Math.abs(obs.z - playerSegmentZ) < 250) { // Proximidade de profundidade Z
+                if (Math.abs(playerX - obs.x) < 0.35) { // Alinhamento na mesma faixa X
+                    triggerGameOver();
+                }
+            }
+        });
+    }
+
+    // Motor Gráfico (Desenhar tudo na tela)
+          
